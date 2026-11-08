@@ -8,8 +8,8 @@ English | [简体中文](README.zh-CN.md)
 
 On Windows, Ctrl+V only pastes your *last* screenshot. Take five, and you are back in the Screenshots folder picking them out one by one. ClawdShelf hangs your recent screenshots on a long pole across the top of the screen. Click one to copy it. Select a few and drag them into a chat or a Word document all at once.
 
-- **Offline and tiny**: a single ~120 KB `.exe` that runs on the .NET Framework 4.8 that ships with Windows 10/11. It uses about 70 MB of RAM and next to no CPU when idle.
-- **Never makes extra copies**: shots saved by Windows (`Win+Shift+S`, `PrtSc`, `Win+PrtSc`) stay where they are and are only referenced. Shots that only go to the clipboard (WeChat, QQ, Snipaste…) are kept once in ClawdShelf's own data folder. A shot that arrives both ways is counted once.
+- **Offline and tiny**: a single ~120 KB `.exe` for Windows 10/11 with .NET Framework 4.8 or 4.8.1. It uses about 70 MB of RAM and next to no CPU when idle.
+- **Local screenshot storage**: screenshots saved by Windows stay in place. ClawdShelf also watches the clipboard for screenshot-like images and saves clipboard-only captures locally. It tries to merge duplicates by image similarity.
 - **A temporary rack**: it holds your most recent 30 shots by default. Taking a shot off the rack never deletes the file. Delete or move the file yourself and the rack notices.
 - **Out of your way**: the rack never steals focus and never closes behind your back. Clicks pass through the pole and the gaps between photos.
 - **Chinese and English**: the language follows Windows.
@@ -18,7 +18,7 @@ On Windows, Ctrl+V only pastes your *last* screenshot. Take five, and you are ba
 
 ## Getting started
 
-1. Download `ClawdShelf.exe` from Releases, or [build it](#building) yourself.
+1. [Download `ClawdShelf.exe`](https://github.com/Ven0304/ClawdShelf/releases/latest/download/ClawdShelf.exe) from the [latest Release](https://github.com/Ven0304/ClawdShelf/releases/latest), or [build it](#building) yourself.
 2. Run it. Clawd appears at the top centre of your screen, standing on a short rod.
 3. Take a screenshot. Clawd jumps to catch it, and the pile on its back grows.
 4. Click Clawd to hang them all up. Right-click → **Start with Windows**, if you like it.

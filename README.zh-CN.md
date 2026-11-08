@@ -8,11 +8,8 @@
 
 Windows 上 Ctrl+V 只能粘贴最后一张截图。截了五张，就得回 Screenshots 文件夹一张张找。ClawdShelf 把最近的截图挂在屏幕顶部的一根长晾衣杆上：点一下就复制，多选几张一起拖进微信或 Word。
 
-- **离线、轻量**：只有一个约 120 KB 的 exe，用的是 Windows 10/11 自带的 .NET Framework 4.8。内存约 70 MB，闲置时几乎不占 CPU。
-- **不多存一份**：
-  - Windows 自己存下来的截图（`Win+Shift+S`、`PrtSc`、`Win+PrtSc`）原地引用，不复制。
-  - 只进剪贴板的截图（微信、QQ、Snipaste 等）在 ClawdShelf 自己的数据目录里存一份。
-  - 同一张图两条路都来了，只算一张。
+- **离线、轻量**：只有一个约 120 KB 的 exe，适用于装有 .NET Framework 4.8 或 4.8.1 的 Windows 10/11。内存约 70 MB，闲置时几乎不占 CPU。
+- **本地保存**：Windows 已保存的截图原地引用。ClawdShelf 也会监听剪贴板，将识别为截图的图片存到本地，并尝试按图像相似度去重。
 - **临时晾衣架**：默认只挂最近 30 张。从架子上取下来不会删原图；你自己删掉或挪走了原图，架子会察觉，把它一并取下。
 - **不碍事**：不抢焦点，点别处不会收起，杆子本身和照片之间的空隙都能点穿。
 - **中英双语**：界面语言跟随 Windows。
@@ -21,7 +18,7 @@ Windows 上 Ctrl+V 只能粘贴最后一张截图。截了五张，就得回 Scr
 
 ## 开始使用
 
-1. 从 Releases 下载 `ClawdShelf.exe`，或者[自己编译](#编译)。
+1. 在[最新 Release](https://github.com/Ven0304/ClawdShelf/releases/latest) 中[下载 `ClawdShelf.exe`](https://github.com/Ven0304/ClawdShelf/releases/latest/download/ClawdShelf.exe)，或者[自己编译](#编译)。
 2. 运行后，Clawd 会站在屏幕顶部正中的一小截杆子上。
 3. 截一张图，它会跳起来接住，背上那摞又高一层。
 4. 点它一下，截图就全挂出来了。觉得好用，右键 →「开机自动启动」。

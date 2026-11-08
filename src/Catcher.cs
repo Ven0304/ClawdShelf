@@ -15,7 +15,7 @@ namespace ClawdShelf
     /// <summary>
     /// Catches new screenshots from two roads:
     ///  1. files appearing in Pictures\Screenshots (Win+Shift+S, PrtSc, Win+PrtSc) -> referenced in place
-    ///  2. images landing on the clipboard only (WeChat / QQ / Snipaste ...) -> saved once to Pictures\ClawdShelf
+    ///  2. images landing on the clipboard only (WeChat / QQ / Snipaste ...) -> saved in the local app data folder
     /// The same shot arriving on both roads is merged into one item.
     /// </summary>
     public class Catcher
@@ -29,8 +29,10 @@ namespace ClawdShelf
         readonly Dispatcher ui;
         FileSystemWatcher fsw;
         readonly DispatcherTimer clipDebounce;
+        int clipDebounceVersion;
         uint lastSeq, ignoreSeq;
-        readonly HashSet<string> seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Only the dispatcher accesses these tokens. A delete or rename invalidates the old read.
+        readonly Dictionary<string, object> pendingReads = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
         readonly uint cfPng, cfSelf, cfChromeUrl, cfMozCtx;
 
         public Catcher(ShelfStore store, Settings settings, Dispatcher ui)
@@ -41,8 +43,7 @@ namespace ClawdShelf
             cfChromeUrl = Native.RegisterClipboardFormat("Chromium internal source URL");
             cfMozCtx = Native.RegisterClipboardFormat("text/_moz_htmlcontext");
             clipDebounce = new DispatcherTimer(DispatcherPriority.Normal, ui) { Interval = TimeSpan.FromMilliseconds(250) };
-            clipDebounce.Tick += delegate { clipDebounce.Stop(); ReadClipboard(); };
-            foreach (var it in store.Items) if (it.Path != null) seenPaths.Add(it.Path);
+            clipDebounce.Tick += delegate { clipDebounce.Stop(); ReadClipboard(clipDebounceVersion); };
         }
 
         public void Start(HwndSource hwnd)
@@ -58,7 +59,7 @@ namespace ClawdShelf
                 fsw = new FileSystemWatcher(dir);
                 fsw.IncludeSubdirectories = false;
                 fsw.NotifyFilter = NotifyFilters.FileName;
-                fsw.Created += (s, e) => OnFile(e.FullPath);
+                fsw.Created += (s, e) => ui.BeginInvoke(new Action(() => OnFile(e.FullPath)));
                 fsw.Renamed += (s, e) => OnRenamed(e.OldFullPath, e.FullPath);
                 fsw.Deleted += (s, e) => OnGone(e.FullPath);
                 fsw.EnableRaisingEvents = true;
@@ -83,10 +84,9 @@ namespace ClawdShelf
         {
             ui.BeginInvoke(new Action(() =>
             {
-                var gone = store.Items.Where(it => it.Path != null && string.Equals(it.Path, path, StringComparison.OrdinalIgnoreCase) && !File.Exists(it.Path)).ToList();
-                if (gone.Count == 0) return;
-                store.Drop(gone);
-                if (FilesGone != null) FilesGone(gone.Count);
+                pendingReads.Remove(path);
+                // A new file may already exist at this path by the time the dispatcher runs.
+                DropGone(store.Items.Where(it => string.Equals(it.Path, path, StringComparison.OrdinalIgnoreCase)).ToList());
             }));
         }
 
@@ -94,11 +94,11 @@ namespace ClawdShelf
         {
             ui.BeginInvoke(new Action(() =>
             {
+                pendingReads.Remove(oldPath);
                 var it = store.Items.FirstOrDefault(x => x.Path != null && string.Equals(x.Path, oldPath, StringComparison.OrdinalIgnoreCase));
                 if (it == null) { OnFile(newPath); return; }   // e.g. Snipping Tool writing a temp file, then renaming it
-                lock (seenPaths) seenPaths.Add(newPath);
                 string ext = (Path.GetExtension(newPath) ?? "").ToLowerInvariant();
-                if (!Exts.Contains(ext)) { OnGone(oldPath); return; }
+                if (!Exts.Contains(ext)) { DropGone(new List<ShotItem> { it }); return; }
                 it.Path = newPath;
                 store.NotifyUpdated(it);
             }));
@@ -107,7 +107,11 @@ namespace ClawdShelf
         /// <summary>Take off the rack anything whose file has disappeared (checked whenever the rack opens).</summary>
         public void PruneMissing()
         {
-            var gone = store.Items.Where(it => it.Path != null && !File.Exists(it.Path)).ToList();
+            DropGone(store.Items.Where(it => it.Path != null && !File.Exists(it.Path)).ToList());
+        }
+
+        void DropGone(List<ShotItem> gone)
+        {
             if (gone.Count == 0) return;
             store.Drop(gone);
             if (FilesGone != null) FilesGone(gone.Count);
@@ -129,6 +133,7 @@ namespace ClawdShelf
             if (msg == Native.WM_CLIPBOARDUPDATE && settings.CatchClipboard)
             {
                 clipDebounce.Stop();
+                clipDebounceVersion = settings.ClipboardCaptureVersion;
                 clipDebounce.Start();
             }
             return IntPtr.Zero;
@@ -136,8 +141,9 @@ namespace ClawdShelf
 
         // ---------------- clipboard road ----------------
 
-        void ReadClipboard()
+        void ReadClipboard(int captureVersion)
         {
+            if (!settings.CatchClipboard || captureVersion != settings.ClipboardCaptureVersion) return;
             uint seq = Native.GetClipboardSequenceNumber();
             if (seq == lastSeq || seq == ignoreSeq) return;
             lastSeq = seq;
@@ -159,13 +165,16 @@ namespace ClawdShelf
             {
                 try
                 {
-                    int w = bmp.Width, h = bmp.Height;
-                    var fp = Img.Fingerprint(bmp);
-                    byte[] png;
-                    using (var ms = new MemoryStream()) { bmp.Save(ms, ImageFormat.Png); png = ms.ToArray(); }
-                    bmp.Dispose();
+                    int w, h;
+                    byte[] fp, png;
+                    using (bmp)
+                    {
+                        w = bmp.Width; h = bmp.Height;
+                        fp = Img.Fingerprint(bmp);
+                        using (var ms = new MemoryStream()) { bmp.Save(ms, ImageFormat.Png); png = ms.ToArray(); }
+                    }
                     var thumb = Img.Thumb(png);
-                    ui.BeginInvoke(new Action(() => AcceptClip(png, w, h, fp, thumb, when)));
+                    ui.BeginInvoke(new Action(() => AcceptClip(png, w, h, fp, thumb, when, captureVersion)));
                 }
                 catch { }
             });
@@ -196,8 +205,9 @@ namespace ClawdShelf
             return null;
         }
 
-        void AcceptClip(byte[] png, int w, int h, byte[] fp, System.Windows.Media.Imaging.BitmapSource thumb, DateTime when)
+        void AcceptClip(byte[] png, int w, int h, byte[] fp, System.Windows.Media.Imaging.BitmapSource thumb, DateTime when, int captureVersion)
         {
+            if (!settings.CatchClipboard || captureVersion != settings.ClipboardCaptureVersion) return;
             // the screenshot file already arrived -> same shot, nothing new
             var twin = FindTwin(false, w, h, fp, when);
             if (twin != null) { twin.HasClip = true; return; }
@@ -229,7 +239,6 @@ namespace ClawdShelf
                 string path = Path.Combine(dir, baseName + ".png");
                 for (int n = 2; File.Exists(path); n++) path = Path.Combine(dir, baseName + " (" + n + ").png");
                 File.WriteAllBytes(path, it.PendingPng);
-                lock (seenPaths) seenPaths.Add(path);
                 it.Path = path;
                 it.OwnCopy = true;
                 it.PendingPng = null;
@@ -247,27 +256,39 @@ namespace ClawdShelf
             string ext = (Path.GetExtension(path) ?? "").ToLowerInvariant();
             if (!Exts.Contains(ext)) return;
             if (Path.GetFileName(path).StartsWith("~")) return;
-            lock (seenPaths) { if (!seenPaths.Add(path)) return; }
+            if (pendingReads.ContainsKey(path)) return;
+            var read = new object();
+            pendingReads.Add(path, read);
             var when = DateTime.Now;
 
             Task.Factory.StartNew(() =>
             {
-                var bytes = Img.ReadWhenReady(path, 8000);
-                if (bytes == null) { lock (seenPaths) seenPaths.Remove(path); return; }
+                int w = 0, h = 0;
+                byte[] fp = null;
+                System.Windows.Media.Imaging.BitmapSource thumb = null;
                 try
                 {
-                    int w, h; byte[] fp;
-                    using (var ms = new MemoryStream(bytes))
-                    using (var bmp = new Bitmap(ms))
-                    using (var b32 = new Bitmap(bmp))
+                    var bytes = Img.ReadWhenReady(path, 8000);
+                    if (bytes != null)
                     {
-                        w = b32.Width; h = b32.Height;
-                        fp = Img.Fingerprint(b32);
+                        using (var ms = new MemoryStream(bytes))
+                        using (var bmp = new Bitmap(ms))
+                        using (var b32 = new Bitmap(bmp))
+                        {
+                            w = b32.Width; h = b32.Height;
+                            fp = Img.Fingerprint(b32);
+                        }
+                        thumb = Img.Thumb(bytes);
                     }
-                    var thumb = Img.Thumb(bytes);
-                    ui.BeginInvoke(new Action(() => AcceptFile(path, w, h, fp, thumb, when)));
                 }
                 catch { }
+                ui.BeginInvoke(new Action(() =>
+                {
+                    object current;
+                    if (!pendingReads.TryGetValue(path, out current) || current != read) return;
+                    pendingReads.Remove(path);
+                    if (fp != null && File.Exists(path)) AcceptFile(path, w, h, fp, thumb, when);
+                }));
             });
         }
 
@@ -278,11 +299,9 @@ namespace ClawdShelf
             var twin = FindTwin(true, w, h, fp, when);
             if (twin != null)
             {
-                // same shot already caught from the clipboard: point at the original instead of keeping a copy
-                string own = twin.OwnCopy ? twin.Path : null;
+                // Point at the original. A saved copy may already be referenced by a paste or drop.
                 twin.Path = path; twin.HasFile = true; twin.OwnCopy = false; twin.PendingPng = null;
                 twin.Source = ShotSource.Screenshot;
-                if (own != null) { try { File.Delete(own); } catch { } }
                 store.NotifyUpdated(twin);
                 return;
             }

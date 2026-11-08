@@ -4,6 +4,8 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Threading;
 using System.Windows.Media.Imaging;
 
@@ -74,51 +76,31 @@ namespace ClawdShelf
     {
         public const int ThumbWidth = 320;
 
-        /// <summary>16x16 grey fingerprint of a bitmap (alpha ignored).</summary>
+        /// <summary>Hash the full 32-bit pixels without copying the whole bitmap.</summary>
         public static byte[] Fingerprint(Bitmap bmp)
         {
-            const int G = 16, S = 4;
-            var fp = new byte[G * G];
             int w = bmp.Width, h = bmp.Height;
             var data = bmp.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
             try
             {
-                var row = new byte[data.Stride];
-                // sample S x S points inside every cell
-                var cache = new Dictionary<int, byte[]>();
-                for (int cy = 0; cy < G; cy++)
-                    for (int cx = 0; cx < G; cx++)
+                var row = new byte[w * 4];
+                using (var hash = SHA256.Create())
+                {
+                    for (int y = 0; y < h; y++)
                     {
-                        int sum = 0;
-                        for (int sy = 0; sy < S; sy++)
-                            for (int sx = 0; sx < S; sx++)
-                            {
-                                int y = (int)((cy + (sy + 0.5) / S) * h / G);
-                                int x = (int)((cx + (sx + 0.5) / S) * w / G);
-                                y = Math.Min(h - 1, y); x = Math.Min(w - 1, x);
-                                byte[] r;
-                                if (!cache.TryGetValue(y, out r))
-                                {
-                                    r = new byte[w * 4];
-                                    System.Runtime.InteropServices.Marshal.Copy(data.Scan0 + y * data.Stride, r, 0, w * 4);
-                                    cache[y] = r;
-                                }
-                                int i = x * 4;
-                                sum += (r[i] * 29 + r[i + 1] * 150 + r[i + 2] * 77) >> 8;
-                            }
-                        fp[cy * G + cx] = (byte)(sum / (S * S));
+                        Marshal.Copy(data.Scan0 + y * data.Stride, row, 0, row.Length);
+                        hash.TransformBlock(row, 0, row.Length, row, 0);
                     }
+                    hash.TransformFinalBlock(row, 0, 0);
+                    return hash.Hash;
+                }
             }
             finally { bmp.UnlockBits(data); }
-            return fp;
         }
 
         public static bool Same(ShotItem a, int w, int h, byte[] fp)
         {
-            if (a.Print == null || fp == null || a.W != w || a.H != h) return false;
-            int diff = 0;
-            for (int i = 0; i < fp.Length; i++) diff += Math.Abs(a.Print[i] - fp[i]);
-            return diff / (double)fp.Length <= 6.0;
+            return a.W == w && a.H == h && a.Print != null && fp != null && a.Print.SequenceEqual(fp);
         }
 
         public static BitmapSource Thumb(byte[] bytes)

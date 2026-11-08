@@ -20,7 +20,7 @@ namespace ClawdShelf
         public bool OwnCopy;         // Path is a file ClawdShelf saved itself
         public byte[] PendingPng;    // clipboard pixels not yet written to disk
         public int W, H;
-        public byte[] Print;         // tiny fingerprint used to spot the same shot coming in twice
+        public byte[] Print;         // pixel hash used to spot the same shot coming in twice
         public BitmapSource Thumb;
     }
 
@@ -36,7 +36,18 @@ namespace ClawdShelf
         public int SleepAfterSec = 180;
         public bool HideFromCapture = true;
         public bool AutoHideFullscreen = true;
-        public bool CatchClipboard = true;
+        bool catchClipboard = true;
+        internal int ClipboardCaptureVersion { get; private set; }
+        public bool CatchClipboard
+        {
+            get { return catchClipboard; }
+            set
+            {
+                if (catchClipboard == value) return;
+                catchClipboard = value;
+                ClipboardCaptureVersion++;
+            }
+        }
 
         public const int MinCapacity = 5, MaxCapacity = 100;
         public const double DefaultScale = 2.5;
